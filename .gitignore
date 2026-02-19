@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+estado_player.json
+playlists/*.json
+!playlists/.keep
+.vscode/

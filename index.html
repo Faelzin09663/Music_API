@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Athena Music Player</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        input[type=range] { -webkit-appearance: none; background: transparent; }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none; height: 16px; width: 16px;
+            border-radius: 50%; background: #60a5fa; cursor: pointer; margin-top: -6px;
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%; height: 4px; background: #374151; border-radius: 2px;
+        }
+    </style>
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen flex items-center justify-center p-4 font-sans">
+
+    <div class="bg-gray-900 p-6 rounded-3xl shadow-xl w-full max-w-md border border-gray-800 relative overflow-hidden flex flex-col max-h-[95vh]">
+        <div id="bgBlur" class="absolute inset-0 bg-cover bg-center opacity-10 blur-xl transition-all duration-700 z-0"></div>
+        
+        <div class="relative z-10 text-center mb-5">
+            <h1 class="text-2xl font-bold text-blue-400 flex items-center justify-center gap-2">
+                <i class="fa-solid fa-robot"></i> Athena Player
+            </h1>
+        </div>
+
+        <div class="relative z-10 flex gap-2 mb-5">
+            <input type="text" id="searchInput" placeholder="Buscar música ou link..." 
+                   class="w-full bg-gray-800 border border-gray-700 text-white px-4 py-3 rounded-xl focus:outline-none focus:border-blue-500 transition">
+        </div>
+
+        <div class="relative z-10 flex gap-3 mb-6">
+            <button onclick="apiCall('/play', true)" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-xl transition shadow-lg shadow-blue-900/30">
+                <i class="fa-solid fa-play mr-2"></i>Tocar
+            </button>
+            <button onclick="apiCall('/add', true)" class="flex-1 bg-gray-800 hover:bg-gray-700 text-white font-bold py-3 px-4 rounded-xl transition border border-gray-700">
+                <i class="fa-solid fa-list-ul mr-2"></i>Add Fila
+            </button>
+        </div>
+
+        <div class="relative z-10 flex flex-col items-center mb-5">
+            <img id="albumCover" src="https://placehold.co/400x400/1f2937/1f2937?text=Athena" class="w-40 h-40 rounded-2xl shadow-2xl mb-4 object-cover border-2 border-gray-800 transition-all duration-500">
+            <h2 id="nowPlaying" class="text-lg font-bold truncate text-white px-4">Carregando...</h2>
+        </div>
+
+        <div class="relative z-10 mb-2 flex flex-col">
+            <input type="range" id="progressBar" min="0" max="100" value="0" onchange="seekAudio()" class="w-full cursor-pointer">
+            <div class="flex justify-between text-xs text-gray-400 mt-1">
+                <span id="currentTime">0:00</span>
+                <span id="totalDuration">0:00</span>
+            </div>
+        </div>
+
+        <div class="relative z-10 flex justify-center items-center gap-6 mb-6">
+            <button onclick="apiCall('/stop')" class="text-gray-400 hover:text-red-500 transition"><i class="fa-solid fa-stop text-xl"></i></button>
+            <button onclick="apiCall('/pause')" class="bg-blue-500 text-white rounded-full w-14 h-14 flex items-center justify-center shadow-lg hover:scale-105 transition"><i class="fa-solid fa-play text-2xl ml-1"></i></button>
+            <button onclick="apiCall('/next')" class="text-gray-400 hover:text-white transition"><i class="fa-solid fa-forward-step text-2xl"></i></button>
+        </div>
+
+        <div class="relative z-10 flex items-center gap-3 mb-5 bg-gray-800/50 p-3 rounded-xl border border-gray-800">
+            <i class="fa-solid fa-volume-low text-gray-400"></i>
+            <input type="range" id="volumeSlider" min="0" max="100" value="70" oninput="changeVolume()" class="w-full cursor-pointer">
+        </div>
+
+        <div class="relative z-10 flex-1 overflow-hidden flex flex-col">
+            <h2 class="text-xs text-gray-500 uppercase font-bold mb-2">Próximas na Fila <span id="queueCount" class="bg-blue-900 text-blue-300 px-2 rounded-full">0</span></h2>
+            <ul id="queueList" class="text-sm text-gray-300 space-y-2 bg-gray-800/50 p-3 rounded-xl flex-1 overflow-y-auto border border-gray-800/50">
+                <li class="opacity-50 italic text-center py-2">Fila vazia.</li>
+            </ul>
+        </div>
+
+        <div class="relative z-10 mt-5 pt-4 border-t border-gray-800">
+            <div class="flex gap-2">
+                <input type="text" id="playlistName" placeholder="Nome da Playlist" class="w-full bg-gray-800 border border-gray-700 text-white px-3 py-2 rounded-lg text-sm">
+                <button onclick="savePlaylist()" class="bg-green-600 hover:bg-green-500 text-white px-3 py-2 rounded-lg"><i class="fa-solid fa-floppy-disk"></i></button>
+                <button onclick="loadPlaylist()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-2 rounded-lg"><i class="fa-solid fa-download"></i></button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = "http://127.0.0.1:8000";
+        let isDraggingProgress = false;
+
+        async function apiCall(endpoint, useQuery = false) {
+            let url = API_URL + endpoint;
+            if (useQuery) {
+                const query = document.getElementById('searchInput').value;
+                if (!query) return alert("Digite algo!");
+                url += `?query=${encodeURIComponent(query)}`;
+            }
+            try {
+                await fetch(url);
+                if (useQuery) document.getElementById('searchInput').value = '';
+                updateStatus();
+            } catch (e) { console.error(e); }
+        }
+
+        async function seekAudio() {
+            const slider = document.getElementById('progressBar');
+            await fetch(`${API_URL}/seek?seconds=${slider.value}`);
+            isDraggingProgress = false;
+        }
+
+        document.getElementById('progressBar').addEventListener('mousedown', () => isDraggingProgress = true);
+
+        async function changeVolume() {
+            const level = document.getElementById('volumeSlider').value;
+            await fetch(`${API_URL}/volume?level=${level}`);
+        }
+
+        async function savePlaylist() {
+            const name = document.getElementById('playlistName').value;
+            if (!name) return alert("Dê um nome!");
+            const res = await fetch(`${API_URL}/playlist/save?name=${name}`);
+            const d = await res.json(); alert(d.message);
+        }
+
+        async function loadPlaylist() {
+            const name = document.getElementById('playlistName').value;
+            const res = await fetch(`${API_URL}/playlist/load?name=${name}`);
+            if (res.ok) { updateStatus(); alert("Playlist carregada!"); }
+        }
+
+        async function updateStatus() {
+            try {
+                const response = await fetch(`${API_URL}/status`);
+                const data = await response.json();
+                document.getElementById('nowPlaying').innerText = data.musica_atual;
+                const cover = data.thumbnail || 'https://placehold.co/400x400/1f2937/1f2937?text=Athena';
+                document.getElementById('albumCover').src = cover;
+                document.getElementById('bgBlur').style.backgroundImage = `url('${cover}')`;
+                
+                if (!isDraggingProgress && data.duracao_total > 1) {
+                    const pb = document.getElementById('progressBar');
+                    pb.max = Math.floor(data.duracao_total);
+                    pb.value = Math.floor(data.tempo_atual);
+                    document.getElementById('currentTime').innerText = Math.floor(data.tempo_atual/60) + ":" + Math.floor(data.tempo_atual%60).toString().padStart(2,'0');
+                    document.getElementById('totalDuration').innerText = Math.floor(data.duracao_total/60) + ":" + Math.floor(data.duracao_total%60).toString().padStart(2,'0');
+                }
+                document.getElementById('queueCount').innerText = data.total_na_fila;
+            } catch (e) { document.getElementById('nowPlaying').innerText = "API Offline"; }
+        }
+
+        setInterval(updateStatus, 1000);
+    </script>
+</body>
+</html>
